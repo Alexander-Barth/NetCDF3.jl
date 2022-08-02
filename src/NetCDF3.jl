@@ -125,19 +125,19 @@ function NetCDFFile0(io::IO)
 
     vars = [
         begin
-            name = unpack_read(io,String)
+            name = Symbol(unpack_read(io,String))
             ndims = unpack_read(io,Int32)
             dimids = [unpack_read(io,Int32) for i in 1:ndims]
             vattrib = read_attributes(io)
             nc_type = unpack_read(io,UInt32)
             T = TYPEMAP[nc_type]
             vsize = unpack_read(io,Int32)
-            start[i+1] = unpack_read(io,Toffset)
+            start[varid+1] = unpack_read(io,Toffset)
             sz = reverse(ntuple(i -> _dimid[dimids[i]],ndims))
 
-            (; name, dimids, vattrib, T, vsize, sz)
+            (; varid, name, dimids, vattrib, T, vsize, sz)
         end
-        for i = 0:count-1
+        for varid = 0:count-1
             ]
 
     NetCDFFile0(
@@ -152,23 +152,57 @@ function NetCDFFile0(io::IO)
 end
 
 
+function isrec(nc::NetCDFFile0,varid)
+    v = nc.vars[varid+1]
+    return any(dimid -> nc._dimid[dimid] == 0, v.dimids)
+end
+
+function inq_size(nc::NetCDFFile0,varid)
+    v = nc.vars[varid+1]
+    if isrec(nc,varid)
+        return ntuple(i -> (v.sz[i] == 0 ? nc.recs : v.sz[i]),length(v.sz))
+    else
+        return v.sz
+    end
+end
+
+
 function nc_get_var!(nc::NetCDFFile0,varid,data)
     index = varid+1
-
-    if size(data) != nc.vars[index].sz
-        error("wrong size of data (got $(size(data)), expected $(nc.vars[index].sz))")
+    v = nc.vars[varid+1]
+    sz = inq_size(nc,varid)
+    if size(data) != sz
+        error("wrong size of data (got $(size(data)), expected $(sz))")
     end
 
     pos = position(nc.io)
-    seek(nc.io,nc.start[index])
-    unpack_read!(nc.io,data)
+
+    if isrec(nc,varid)
+        recsize = 0
+        for v in nc.vars
+            if any(dimid -> nc._dimid[dimid] == 0, v.dimids)
+                recsize += v.vsize
+            end
+        end
+
+        for irec = 1:nc.recs
+            seek(nc.io,nc.start[varid+1] + (irec-1) * recsize)
+            indices = ntuple(i -> (v.sz[i] == 0 ? (irec:irec) : Colon()),length(v.sz))
+            unpack_read!(nc.io,view(data,indices...))
+        end
+    else
+        seek(nc.io,nc.start[index])
+        unpack_read!(nc.io,data)
+    end
+
     seek(nc.io,pos)
     return data
 end
 
 function nc_get_var(nc::NetCDFFile0,varid)
     v = nc.vars[varid+1]
-    data = Array{v.T,length(v.sz)}(undef,v.sz...)
+    sz = inq_size(nc,varid)
+    data = Array{v.T,length(sz)}(undef,sz...)
     return nc_get_var!(nc,varid,data)
 end
 
@@ -177,5 +211,18 @@ function close(nc::NetCDFFile0)
     close(nc.io)
 end
 
+
+
+function nc_inq_varid(nc::NetCDFFile0,varname)
+    vn = Symbol(varname)
+
+    for v in nc.vars
+        if v.name == vn
+            return v.varid
+        end
+    end
+
+    error("variable $varname not found in $(nc.io)")
+end
 
 end # module

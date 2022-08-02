@@ -46,3 +46,6 @@ rm(fname)
   1.564 s (0 allocations: 0 bytes)
 
 =#
+
+
+include("test_unlimdim.jl")
