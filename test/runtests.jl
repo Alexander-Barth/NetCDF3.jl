@@ -13,7 +13,7 @@ close(ds)
 
 @info "pure julia NetCDF"
 
-nc = NetCDF3.NetCDFFile0(fname); varid = 0;
+nc = NetCDF3.File(fname); varid = 0;
 data = zeros(T,sz)
 @btime NetCDF3.nc_get_var!(nc,varid,data);
 close(nc)

@@ -23,7 +23,7 @@ nctime[:] = time_ref
 ncvar[:,:,:] = data_ref
 close(ds)
 
-nc = NetCDF3.NetCDFFile0(fname);
+nc = NetCDF3.File(fname);
 
 varid = NetCDF3.nc_inq_varid(nc,:foo)
 data = NetCDF3.nc_get_var(nc,varid)

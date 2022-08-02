@@ -78,7 +78,7 @@ function read_attributes(io)
 end
 
 
-struct NetCDFFile0{TIO <: IO, TV}
+struct File{TIO <: IO, TV}
     io::TIO
     version_byte::UInt8
     recs::Int32
@@ -89,9 +89,9 @@ struct NetCDFFile0{TIO <: IO, TV}
     vars::Vector{TV}
 end
 
-NetCDFFile0(fname::AbstractString) = NetCDFFile0(open(fname))
+File(fname::AbstractString) = File(open(fname))
 
-function NetCDFFile0(io::IO)
+function File(io::IO)
     magic = read(io,3)
     @assert String(magic) == "CDF"
 
@@ -140,7 +140,7 @@ function NetCDFFile0(io::IO)
         for varid = 0:count-1
             ]
 
-    NetCDFFile0(
+    File(
         io,
         version_byte,
         recs,
@@ -152,12 +152,12 @@ function NetCDFFile0(io::IO)
 end
 
 
-function isrec(nc::NetCDFFile0,varid)
+function isrec(nc::File,varid)
     v = nc.vars[varid+1]
     return any(dimid -> nc._dimid[dimid] == 0, v.dimids)
 end
 
-function inq_size(nc::NetCDFFile0,varid)
+function inq_size(nc::File,varid)
     v = nc.vars[varid+1]
     if isrec(nc,varid)
         return ntuple(i -> (v.sz[i] == 0 ? nc.recs : v.sz[i]),length(v.sz))
@@ -167,7 +167,7 @@ function inq_size(nc::NetCDFFile0,varid)
 end
 
 
-function nc_get_var!(nc::NetCDFFile0,varid,data)
+function nc_get_var!(nc::File,varid,data)
     index = varid+1
     v = nc.vars[varid+1]
     sz = inq_size(nc,varid)
@@ -199,7 +199,7 @@ function nc_get_var!(nc::NetCDFFile0,varid,data)
     return data
 end
 
-function nc_get_var(nc::NetCDFFile0,varid)
+function nc_get_var(nc::File,varid)
     v = nc.vars[varid+1]
     sz = inq_size(nc,varid)
     data = Array{v.T,length(sz)}(undef,sz...)
@@ -207,13 +207,13 @@ function nc_get_var(nc::NetCDFFile0,varid)
 end
 
 
-function close(nc::NetCDFFile0)
+function close(nc::File)
     close(nc.io)
 end
 
 
 
-function nc_inq_varid(nc::NetCDFFile0,varname)
+function nc_inq_varid(nc::File,varname)
     vn = Symbol(varname)
 
     for v in nc.vars
