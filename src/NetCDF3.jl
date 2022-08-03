@@ -33,6 +33,10 @@ const TYPEMAP = Dict(
     NC_DOUBLE => Float64,
 )
 
+const NCTYPE = Dict((v,k) for (k,v) in TYPEMAP)
+
+# reading
+
 function unpack_read(io,T)
     return hton(read(io,T))
 end
@@ -47,15 +51,20 @@ end
 
 function unpack_read(io,T::Type{String})
     count = unpack_read(io,Int32)
+    #@show count
     s = String(read(io,count))
+    #@show "read p ",mod(-count,4)
     read(io,mod(-count,4)) # read padding
+    #@show s
     return s
 end
 
 function read_attribute_values(io)
     nc_type = unpack_read(io,UInt32)
     n = unpack_read(io,Int32)
+    @show n,nc_type
     T = TYPEMAP[nc_type]
+    @show T
     values = [unpack_read(io,T) for i = 1:n]
     read(io, mod(-(n*sizeof(T)), 4))  # read padding
     return values
@@ -64,10 +73,10 @@ end
 function read_attributes(io)
     attrib = OrderedDict{Symbol,Any}()
     header = unpack_read(io,UInt32)
-
     @assert header in [NC_ATTRIBUTE, ZERO]
 
     count = unpack_read(io,Int32)
+    @show count,header == NC_ATTRIBUTE
     for i = 1:count
         name = unpack_read(io,String)
         values = read_attribute_values(io)
@@ -75,6 +84,53 @@ function read_attributes(io)
     end
 
     return attrib
+end
+
+# writing
+
+function unpack_write(io,data)
+    #@show "write ",data
+    return write(io,ntoh(data))
+end
+
+function unpack_write(io,data::AbstractArray)
+    #@show data,"jjjj",typeof(data)
+    for d in data
+        #@show d
+        write(io,ntoh(d))
+        #@show "end",d
+    end
+end
+
+function unpack_write(io,data::String)
+    count = Int32(sizeof(data))
+    #@show count
+    unpack_write(io,count)
+    #@show data,Vector{UInt8}(data)
+    #unpack_write(io,unsafe_wrap(Vector{UInt8}, pointer(data), count))
+    unpack_write(io,Vector{UInt8}(data))
+    for p in 1:mod(-count,4)
+        #@show "p"
+        unpack_write(io,0x00)
+    end
+end
+
+function write_attrib(io,attrib)
+    unpack_write(io,NC_ATTRIBUTE)
+    unpack_write(io,Int32(length(attrib)))
+
+    for (k,v) in attrib
+        n = length(v)
+        T = eltype(v)
+
+        unpack_write(io,String(k))
+        unpack_write(io,NCTYPE[T])
+        unpack_write(io,Int32(n))
+        unpack_write(io,v)
+        for p in 1:mod(-(n*sizeof(T)), 4)
+            unpack_write(io,0x00)
+        end
+    end
 end
 
 
@@ -107,6 +163,7 @@ function File(io::IO)
     _dimid = OrderedDict{Int,Int}()
     for i = 0:count-1
         s = unpack_read(io,String)
+        #@show s
         len = unpack_read(io,Int32)
         dim[Symbol(s)] = len
         _dimid[i] = len
@@ -169,7 +226,7 @@ end
 
 function nc_get_var!(nc::File,varid,data)
     index = varid+1
-    v = nc.vars[varid+1]
+    v = nc.vars[index]
     sz = inq_size(nc,varid)
     if size(data) != sz
         error("wrong size of data (got $(size(data)), expected $(sz))")
