@@ -134,20 +134,7 @@ function write_attrib(io,attrib)
 end
 
 
-struct File{TIO <: IO, TV}
-    io::TIO
-    version_byte::UInt8
-    recs::Int32
-    dim::OrderedDict{Symbol,Int}
-    _dimid::OrderedDict{Int,Int}
-    attrib::OrderedDict{Symbol,Any}
-    start::Vector{Int64}
-    vars::Vector{TV}
-end
-
-File(fname::AbstractString) = File(open(fname))
-
-function File(io::IO)
+function nc_open(io,write)
     magic = read(io,3)
     @assert String(magic) == "CDF"
 
@@ -184,21 +171,22 @@ function File(io::IO)
         begin
             name = Symbol(unpack_read(io,String))
             ndims = unpack_read(io,Int32)
-            dimids = [unpack_read(io,Int32) for i in 1:ndims]
-            vattrib = read_attributes(io)
+            dimids = reverse([unpack_read(io,Int32) for i in 1:ndims])
+            attrib = read_attributes(io)
             nc_type = unpack_read(io,UInt32)
             T = TYPEMAP[nc_type]
             vsize = unpack_read(io,Int32)
             start[varid+1] = unpack_read(io,Toffset)
-            sz = reverse(ntuple(i -> _dimid[dimids[i]],ndims))
+            sz = ntuple(i -> _dimid[dimids[i]],ndims)
 
-            (; varid, name, dimids, vattrib, T, vsize, sz)
+            (; varid, name, dimids, attrib, T, vsize, sz)
         end
         for varid = 0:count-1
             ]
 
     File(
         io,
+        write,
         version_byte,
         recs,
         dim,
@@ -208,6 +196,29 @@ function File(io::IO)
         vars)
 end
 
+struct File{TIO <: IO, TV}
+    io::TIO
+    write::Bool
+    version_byte::UInt8
+    recs::Int32
+    dim::OrderedDict{Symbol,Int}
+    _dimid::OrderedDict{Int,Int}
+    attrib::OrderedDict{Symbol,Any}
+    start::Vector{Int64}
+    vars::Vector{TV}
+end
+
+File(fname::AbstractString,args...) = File(open(fname),args...)
+File(io::IO) = nc_open(io,false)
+function File(fname::AbstractString,mode="r")
+    if mode == "r"
+        io = open(fname,write=false)
+        nc_open(io,false)
+    elseif mode == "c"
+        io = open(fname,"w+")
+        nc_create(io)
+    end
+end
 
 function isrec(nc::File,varid)
     v = nc.vars[varid+1]
@@ -216,11 +227,22 @@ end
 
 function inq_size(nc::File,varid)
     v = nc.vars[varid+1]
-    if isrec(nc,varid)
+
+    sz = ntuple(length(v.dimids)) do i
+        dimlen = nc._dimid[v.dimids[i]]
+        if dimlen == 0
+            return nc.recs
+        else
+            dimlen
+        end
+    end
+
+    return sz
+#=    if isrec(nc,varid)
         return ntuple(i -> (v.sz[i] == 0 ? nc.recs : v.sz[i]),length(v.sz))
     else
         return v.sz
-    end
+    end=#
 end
 
 
@@ -248,6 +270,7 @@ function nc_get_var!(nc::File,varid,data)
             unpack_read!(nc.io,view(data,indices...))
         end
     else
+        @show nc.start[index]
         seek(nc.io,nc.start[index])
         unpack_read!(nc.io,data)
     end
@@ -281,5 +304,8 @@ function nc_inq_varid(nc::File,varname)
 
     error("variable $varname not found in $(nc.io)")
 end
+
+include("write.jl")
+include("attributes.jl")
 
 end # module

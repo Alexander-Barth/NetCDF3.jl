@@ -3,6 +3,7 @@ using Test
 using NCDatasets
 using BenchmarkTools
 
+#=
 sz = (1000,1000,100)
 T = Float64
 fname = tempname()
@@ -13,12 +14,12 @@ close(ds)
 
 @info "pure julia NetCDF"
 
-nc = NetCDF3.File(fname); varid = 0;
+nc = NetCDF3.File(fname);
+varid = NetCDF3.nc_inq_varid(nc,:foo);
 data = zeros(T,sz)
-@btime NetCDF3.nc_get_var!(nc,varid,data);
+@time NetCDF3.nc_get_var!(nc,varid,data);
 close(nc)
 @test data == data_ref;
-
 
 @info "libnetcdf"
 
@@ -32,8 +33,8 @@ varid = ncvar.varid
 close(ds)
 @test data == data_ref;
 
-
 rm(fname)
+=#
 
 #=
 # Reading a 1000x1000x100 array of Float64 with random data
@@ -48,4 +49,6 @@ rm(fname)
 =#
 
 
+include("test_read.jl")
 include("test_unlimdim.jl")
+include("test_write.jl")
