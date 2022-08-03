@@ -1,7 +1,6 @@
 using NetCDF3
 using Test
 using NCDatasets
-using DataStructures
 
 
 data_ref = rand(Int32.(1:10),2,3);
