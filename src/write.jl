@@ -108,52 +108,20 @@ function nc_create(io,format=:netcdf3_64bit_offset)
 end
 
 
-function nc_def_dim(nc,dimname,dimlength)
-    dimid = length(nc.dim)
-    nc.dim[Symbol(dimname)] = dimlength
-    nc._dimid[dimid] = dimlength
-    return dimid
-end
-
-function nc_def_var(nc,name,T,dimids)
-    offset = 1024
-    for v in nc.vars
-        offset += v.vsize
-    end
-
-    varid = length(nc.vars)
-    attrib = OrderedDict{Symbol,Any}()
-    sz = reverse(ntuple(i -> nc._dimid[dimids[i]],length(dimids)))
-
-    vsize = prod(filter(!=(0),sz)) * sizeof(T)
-    vsize += mod(-vsize,4) # padding
-
-    push!(nc.vars,(; varid, name, dimids, attrib, T, vsize, sz))
-    push!(nc.start,offset)
-    return varid
-end
-
-
-function nc_put_var(nc,varid,data)
-    i = varid+1
-    @assert eltype(data) == nc.vars[i].T
-    @show nc.start[i]
-
-    seek(nc.io,nc.start[i])
-    unpack_write(nc.io,data)
-end
-
 function nc_close(nc)
-    memio = IOBuffer()
-    offset0 = 1024
-    Toffset = Int
 
-    start = try_write_header(memio,nc.dim,nc.attrib,nc.vars,Toffset,offset0)
-    @show offset0, start[1]
-    @assert offset0 >= start[1]
+    if nc.write
+        memio = IOBuffer()
+        offset0 = 1024
+        Toffset = Int
 
-    # otherwise need to shift data in file to make room for larger header
-    seekstart(nc.io)
-    write(nc.io,take!(memio))
+        start = try_write_header(memio,nc.dim,nc.attrib,nc.vars,Toffset,offset0)
+        @debug offset0, start[1]
+        @assert offset0 >= start[1]
+
+        # otherwise need to shift data in file to make room for larger header
+        seekstart(nc.io)
+        write(nc.io,take!(memio))
+    else
     close(nc.io)
 end
