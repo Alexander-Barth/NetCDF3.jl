@@ -2,6 +2,7 @@ using NetCDF3
 using Test
 using NCDatasets
 
+# read
 sz = (2,3,4)
 T = Float64
 fname = tempname()
@@ -32,3 +33,39 @@ data = NetCDF3.nc_get_var(nc,varid)
 varid = NetCDF3.nc_inq_varid(nc,:time)
 time = NetCDF3.nc_get_var(nc,varid)
 @test time == time_ref
+
+
+
+# write
+
+data_ref = rand(Int32.(1:10),2,3);
+lon_ref = Float64[1,2]
+
+fname = tempname()
+
+nc = NetCDF3.File(fname,"c")
+dimid1 = NetCDF3.nc_def_dim(nc,:lon,2)
+dimid2 = NetCDF3.nc_def_dim(nc,:lat,0) # unlimited
+#varid = NetCDF3.nc_def_var(nc,:lon,Float64,(dimid1,))
+#NetCDF3.nc_put_var(nc,varid,lon_ref)
+#NetCDF3.nc_put_att(nc,varid,:units,Vector{UInt8}("degree east"))
+
+varid = NetCDF3.nc_def_var(nc,:data,Int32,(dimid1,dimid2))
+NetCDF3.nc_put_var(nc,varid,data_ref)
+
+data = NetCDF3.nc_get_var(nc,varid)
+@test data == data_ref
+
+NetCDF3.nc_close(nc)
+
+nc = NetCDF3.File(fname,"r")
+varid = NetCDF3.nc_inq_varid(nc,:data);
+data = NetCDF3.nc_get_var(nc,varid)
+@test data == data_ref
+
+
+ds = NCDataset(fname)
+#@show ds
+@test ds["data"].var[:,:] == data_ref
+#@test ds["lon"].var[:] == lon_ref
+close(ds)

@@ -48,7 +48,9 @@ rm(fname)
 
 =#
 
-
-include("test_read.jl")
-include("test_unlimdim.jl")
-include("test_write.jl")
+@testset "NetCDF3" begin
+    include("test_errors.jl")
+    include("test_read.jl")
+    include("test_unlimdim.jl")
+    include("test_write.jl")
+end

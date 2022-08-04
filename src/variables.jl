@@ -21,23 +21,50 @@ function nc_def_var(nc,name,T,dimids)
 
     varid = length(nc.vars)
     attrib = OrderedDict{Symbol,Any}()
-    sz = reverse(ntuple(i -> nc._dimid[dimids[i]],length(dimids)))
 
-    vsize = prod(filter(!=(0),sz)) * sizeof(T)
-    vsize += mod(-vsize,4) # padding
+    sz,vsize = _vsize(nc._dimid,dimids,T)
 
     push!(nc.vars,(; varid, name, dimids, attrib, T, vsize, sz))
     push!(nc.start,offset)
+
+    if isrec(nc,varid) && nc.recs > 0
+        error("All record variables need to be defined before any data is written.")
+    end
     return varid
 end
 
+function _recsize(nc,varid)
+    recsize = 0
+    for v in nc.vars
+        if any(dimid -> nc._dimid[dimid] == 0, v.dimids)
+            recsize += v.vsize
+        end
+    end
+
+    return recsize
+end
 
 function nc_put_var(nc,varid,data)
     i = varid+1
+    v = nc.vars[i]
     @assert eltype(data) == nc.vars[i].T
 
-    seek(nc.io,nc.start[i])
-    pack_write(nc.io,data)
+    if !isrec(nc,varid)
+        seek(nc.io,nc.start[i])
+        pack_write(nc.io,data)
+    else
+        recsize = _recsize(nc,varid)
+
+        lock(nc.lock) do
+            nc.recs = max(nc.recs,size(data)[end])
+        end
+
+        for irec = 1:size(data)[end]
+            seek(nc.io,nc.start[varid+1] + (irec-1) * recsize)
+            indices = ntuple(i -> (v.sz[i] == 0 ? (irec:irec) : Colon()),length(v.sz))
+            pack_write(nc.io,view(data,indices...))
+        end
+    end
 end
 
 
@@ -52,12 +79,7 @@ function nc_get_var!(nc::File,varid,data)
     pos = position(nc.io)
 
     if isrec(nc,varid)
-        recsize = 0
-        for v in nc.vars
-            if any(dimid -> nc._dimid[dimid] == 0, v.dimids)
-                recsize += v.vsize
-            end
-        end
+        recsize = _recsize(nc,varid)
 
         for irec = 1:nc.recs
             seek(nc.io,nc.start[varid+1] + (irec-1) * recsize)

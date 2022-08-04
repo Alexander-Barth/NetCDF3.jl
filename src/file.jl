@@ -50,7 +50,14 @@ end
 
 function nc_open(io,write)
     magic = read(io,3)
-    @assert String(magic) == "CDF"
+    if String(magic) != "CDF"
+        error(
+            "This is not a NetCDF 3 file. You can check the kind of NetCDF " *
+            "file by running `ncdump -k filename.nc`. For NetCDF 3 file you " *
+            "should see `classic` or `64-bit offset`. NetCDF3.jl cannot read " *
+            "NetCDF 4 (based on HDF5) files."
+        )
+    end
 
     version_byte = unpack_read(io,UInt8)
     recs = unpack_read(io,Int32)
@@ -107,10 +114,12 @@ function nc_open(io,write)
         _dimid,
         attrib,
         start,
-        vars)
+        vars,
+        ReentrantLock(),
+    )
 end
 
-struct File{TIO <: IO, TV}
+mutable struct File{TIO <: IO, TV}
     io::TIO
     write::Bool
     version_byte::UInt8
@@ -120,6 +129,7 @@ struct File{TIO <: IO, TV}
     attrib::OrderedDict{Symbol,Any}
     start::Vector{Int64}
     vars::Vector{TV}
+    lock::ReentrantLock
 end
 
 File(fname::AbstractString,args...) = File(open(fname),args...)
@@ -165,9 +175,14 @@ function close(nc::File)
 end
 
 
+function _vsize(_dimid,dimids,T)
+    sz = ntuple(i -> _dimid[dimids[i]],length(dimids))
+    vsize = prod(filter(!=(0),sz)) * sizeof(T)
+    vsize += mod(-vsize,4) # padding
+    return sz,vsize
+end
 
-
-function try_write_header(io,dims,attrib,vars,::Type{Toffset},offset0) where Toffset
+function try_write_header(io,recs,dims,attrib,vars,::Type{Toffset},offset0) where Toffset
     _dimids = OrderedDict((k-1,v[2]) for (k,v) in collect(enumerate(dims)))
 
     seekstart(io)
@@ -179,10 +194,8 @@ function try_write_header(io,dims,attrib,vars,::Type{Toffset},offset0) where Tof
         version_byte = UInt8(2)
     end
 
-    recs = Int32(0)
-
     pack_write(io,version_byte)
-    pack_write(io,recs)
+    pack_write(io,Int32(recs))
 
     ndims = length(dims)
     nvars = length(vars)
@@ -205,8 +218,8 @@ function try_write_header(io,dims,attrib,vars,::Type{Toffset},offset0) where Tof
     for v in vars
         T = v.T
         i = v.varid+1
-        vsize = prod(_dimids[id] for id in v.dimids) * sizeof(v.T)
-        vsize += mod(-vsize,4) # padding
+
+        sz,vsize = _vsize(_dimids,v.dimids,T)
 
         pack_write(io,String(v.name))
         pack_write(io,Int32(length(v.dimids)))
@@ -270,7 +283,9 @@ function nc_create(io,format=:netcdf3_64bit_offset)
         _dimid,
         attrib,
         start,
-        vars)
+        vars,
+        ReentrantLock(),
+    )
 end
 
 
@@ -279,7 +294,7 @@ function nc_close(nc)
     offset0 = 1024
     Toffset = Int
 
-    start = try_write_header(memio,nc.dim,nc.attrib,nc.vars,Toffset,offset0)
+    start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,Toffset,offset0)
     @debug offset0, start[1]
     @assert offset0 >= start[1]
 
