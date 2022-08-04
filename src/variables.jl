@@ -13,6 +13,24 @@ function nc_inq_varid(nc::File,varname)
 end
 
 
+function nc_inq_var(nc::File,varid)
+    for v in nc.vars
+        if v.varid == varid
+            return (v.name,v.T,v.dimids,length(v.attrib))
+        end
+    end
+
+    error("variable with id $varid not found in $(nc.io)")
+end
+
+nc_inq_varname(nc::File,varid) = nc_inq_var(nc,varid)[1]
+nc_inq_vartype(nc::File,varid) = nc_inq_var(nc,varid)[2]
+nc_inq_varndims(nc::File,varid) = length(nc_inq_var(nc,varid)[3])
+nc_inq_vardimid(nc::File,varid) = nc_inq_var(nc,varid)[3]
+nc_inq_varnatts(nc::File,varid) = nc_inq_var(nc,varid)[4]
+
+nc_inq_varids(nc::File) = ((v.varid for v in nc.vars)...,)
+
 function nc_def_var(nc,name,T,dimids)
     offset = 1024
     for v in nc.vars

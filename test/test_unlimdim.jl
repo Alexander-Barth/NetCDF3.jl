@@ -26,6 +26,11 @@ close(ds)
 
 nc = NetCDF3.File(fname);
 
+@test NetCDF3.nc_inq_ndims(nc) == 3
+@test NetCDF3.nc_inq_unlimdims(nc) == (NetCDF3.nc_inq_dimid(nc,:time),)
+
+
+
 varid = NetCDF3.nc_inq_varid(nc,:foo)
 data = NetCDF3.nc_get_var(nc,varid)
 @test data == data_ref

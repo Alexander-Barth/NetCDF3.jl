@@ -23,7 +23,7 @@ function read_attributes(io)
     return attrib
 end
 
-function write_attrib(io,attrib)
+function write_attributes(io,attrib)
     pack_write(io,NC_ATTRIBUTE)
     pack_write(io,Int32(length(attrib)))
 

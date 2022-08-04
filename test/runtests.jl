@@ -53,4 +53,6 @@ rm(fname)
     include("test_read.jl")
     include("test_unlimdim.jl")
     include("test_write.jl")
+    include("test_dimensions.jl")
+    include("test_variables.jl")
 end

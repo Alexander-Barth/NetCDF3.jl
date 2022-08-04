@@ -92,7 +92,7 @@ function nc_open(io,write)
         begin
             name = Symbol(unpack_read(io,String))
             ndims = unpack_read(io,Int32)
-            dimids = reverse([unpack_read(io,Int32) for i in 1:ndims])
+            dimids = reverse(((unpack_read(io,Int32) for i in 1:ndims)...,))
             attrib = read_attributes(io)
             nc_type = unpack_read(io,UInt32)
             T = TYPEMAP[nc_type]
@@ -207,7 +207,7 @@ function try_write_header(io,recs,dims,attrib,vars,::Type{Toffset},offset0) wher
         pack_write(io,Int32(v))
     end
 
-    write_attrib(io,attrib)
+    write_attributes(io,attrib)
 
     pack_write(io,NC_VARIABLE)
     pack_write(io,Int32(nvars))
@@ -226,7 +226,7 @@ function try_write_header(io,recs,dims,attrib,vars,::Type{Toffset},offset0) wher
         for dimid in reverse(v.dimids)
             pack_write(io,Int32(dimid))
         end
-        write_attrib(io,v.attrib)
+        write_attributes(io,v.attrib)
         pack_write(io,NCTYPE[v.T])
         pack_write(io,Int32(vsize))
         pack_write(io,offset)
