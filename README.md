@@ -1,6 +1,6 @@
 
 
-Experimental package of pure julia NetCDF 3 file format.
+Experimental package of a pure julia NetCDF 3 file format reader and writer.
 
 
 # Credits
