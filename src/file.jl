@@ -119,21 +119,10 @@ function nc_open(io,write)
     )
 end
 
-mutable struct File{TIO <: IO, TV}
-    io::TIO
-    write::Bool
-    version_byte::UInt8
-    recs::Int32
-    dim::OrderedDict{Symbol,Int}
-    _dimid::OrderedDict{Int,Int}
-    attrib::OrderedDict{Symbol,Any}
-    start::Vector{Int64}
-    vars::Vector{TV}
-    lock::ReentrantLock
-end
-
 File(fname::AbstractString,args...) = File(open(fname),args...)
+
 File(io::IO) = nc_open(io,false)
+
 function File(fname::AbstractString,mode="r")
     if mode == "r"
         io = open(fname,write=false)
@@ -142,31 +131,6 @@ function File(fname::AbstractString,mode="r")
         io = open(fname,"w+")
         nc_create(io)
     end
-end
-
-function isrec(nc::File,varid)
-    v = nc.vars[varid+1]
-    return any(dimid -> nc._dimid[dimid] == 0, v.dimids)
-end
-
-function inq_size(nc::File,varid)
-    v = nc.vars[varid+1]
-
-    sz = ntuple(length(v.dimids)) do i
-        dimlen = nc._dimid[v.dimids[i]]
-        if dimlen == 0
-            return nc.recs
-        else
-            dimlen
-        end
-    end
-
-    return sz
-#=    if isrec(nc,varid)
-        return ntuple(i -> (v.sz[i] == 0 ? nc.recs : v.sz[i]),length(v.sz))
-    else
-        return v.sz
-    end=#
 end
 
 
@@ -302,4 +266,16 @@ function nc_close(nc)
     seekstart(nc.io)
     write(nc.io,take!(memio))
     close(nc.io)
+end
+
+
+function _recsize(nc)
+    recsize = 0
+    for v in nc.vars
+        if any(dimid -> nc._dimid[dimid] == 0, v.dimids)
+            recsize += v.vsize
+        end
+    end
+
+    return recsize
 end

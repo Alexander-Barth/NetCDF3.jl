@@ -17,7 +17,7 @@ close(ds)
 nc = NetCDF3.File(fname);
 varid = NetCDF3.nc_inq_varid(nc,:foo);
 data = zeros(T,sz)
-@time NetCDF3.nc_get_var!(nc,varid,data);
+@btime NetCDF3.nc_get_var!(nc,varid,data);
 close(nc)
 @test data == data_ref;
 
@@ -29,7 +29,7 @@ ncid = ds.ncid
 varid = ncvar.varid
 
 @btime ccall((:nc_get_var,NCDatasets.libnetcdf),Cint,(Cint,Cint,Ptr{Nothing}),$ncid,$varid,$data)
-
+c
 close(ds)
 @test data == data_ref;
 

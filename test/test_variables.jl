@@ -22,7 +22,11 @@ NetCDF3.nc_close(nc)
 
 
 nc = NetCDF3.File(fname,"r")
-@test NetCDF3.nc_inq_varids(nc) == (0,1)
+
+
+@test NetCDF3.nc_inq_varids(nc) === (
+    NetCDF3.nc_inq_varid(nc,:lon),
+    NetCDF3.nc_inq_varid(nc,:data));
 
 varid = NetCDF3.nc_inq_varid(nc,:data)
 

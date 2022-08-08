@@ -42,10 +42,10 @@ function write_attributes(io,attrib)
 end
 
 
-function nc_put_att(nc,varid,name,data)
-    nc.vars[varid+1].attrib[Symbol(name)] = data
+function nc_put_att(nc,var,name,data)
+    nc.vars[var.varid+1].attrib[Symbol(name)] = data
 end
 
-function nc_get_att(nc,varid,name)
-    return nc.vars[varid+1].attrib[Symbol(name)]
+function nc_get_att(nc,var,name)
+    return nc.vars[var.varid+1].attrib[Symbol(name)]
 end

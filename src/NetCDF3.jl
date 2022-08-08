@@ -1,7 +1,7 @@
 module NetCDF3
 
 using DataStructures
-import Base: close
+import Base: close, eltype, size, getindex, setindex
 
 # based on https://pypi.org/project/pupynere/
 # by Roberto De Almeida (MIT)
@@ -34,6 +34,7 @@ const TYPEMAP = Dict(
 
 const NCTYPE = Dict((v,k) for (k,v) in TYPEMAP)
 
+include("types.jl")
 include("file.jl")
 include("dimensions.jl")
 include("attributes.jl")
