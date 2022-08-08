@@ -68,6 +68,9 @@ varid = NetCDF3.nc_inq_varid(nc,:data);
 data = NetCDF3.nc_get_var(nc,varid)
 @test data == data_ref
 
+data = NetCDF3.nc_get_var1(nc,varid,(2,2))
+@test data == data_ref[2,2]
+@test varid[2,2] == data_ref[2,2]
 
 ds = NCDataset(fname)
 #@show ds

@@ -50,9 +50,4 @@ for j = 1:size(data_ref,2)
     end
 end
 
-
-@btime NetCDF3.nc_get_var1(nc,varid,(1,1))
-
-
-
-#close(nc)
+close(nc)

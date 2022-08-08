@@ -46,8 +46,13 @@ function Base.show(io::IO,mime::MIME"text/plain",var::Var)
 end
 
 
-function Base.getindex(var::Var,indices...)
-    nc_get_var(var.nc,var)[indices...]
+function Base.getindex(var::Var{T,N},indices::Vararg{Int, N}) where {T,N}
+    nc_get_var1(var.nc,var,indices)
+end
+
+
+function Base.getindex(var::Var{T,N},indices::Vararg{Colon, N}) where {T,N}
+    nc_get_var(var.nc,var)
 end
 
 #Base.show(io::IO, m::MIME"text/plain", v::Var) = show(io, m, v)
@@ -165,22 +170,21 @@ function nc_get_var(nc::File,var)
     return nc_get_var!(nc,var,data)
 end
 
-function nc_get_var1(nc::File,var,indices)
+@inline function nc_get_var1(nc::File,var::Var{T},indices) where T
     index = var.varid+1
     offset = nc.start[index]
 
-    if isrec(var)
+    off = 1
 
-    else
-        off = 1
-        T = eltype(var)
-
-        for (i,len) in zip(indices,var.size)
-            offset += (i-1) * off * sizeof(T)
-            off = off * len
-        end
-
-        seek(nc.io,offset)
-        return unpack_read(nc.io,eltype(var))
+    for (i,len) in zip(indices,var.size)
+        offset += (i-1) * off * sizeof(T)
+        off = off * len
     end
+
+    if isrec(var)
+        recsize = _recsize(nc) * (indices[end]-1)
+    end
+
+    seek(nc.io,offset)
+    return unpack_read(nc.io,T)
 end

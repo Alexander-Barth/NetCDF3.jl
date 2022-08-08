@@ -1,7 +1,7 @@
 
 # reading
 
-function unpack_read(io,T)
+@inline function unpack_read(io,T)
     return hton(read(io,T))
 end
 
@@ -25,7 +25,7 @@ end
 
 # writing
 
-function pack_write(io,data)
+@inline function pack_write(io,data)
     return write(io,ntoh(data))
 end
 
@@ -123,12 +123,12 @@ File(fname::AbstractString,args...) = File(open(fname),args...)
 
 File(io::IO) = nc_open(io,false)
 
-function File(fname::AbstractString,mode="r")
+function File(fname::AbstractString,mode="r"; lock = true)
     if mode == "r"
-        io = open(fname,write=false)
+        io = open(fname,write=false,lock=lock)
         nc_open(io,false)
     elseif mode == "c"
-        io = open(fname,"w+")
+        io = open(fname,"w+",lock=lock)
         nc_create(io)
     end
 end

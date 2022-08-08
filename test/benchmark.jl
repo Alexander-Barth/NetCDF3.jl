@@ -17,9 +17,11 @@ close(ds)
 nc = NetCDF3.File(fname);
 NetCDF3_varid = NetCDF3.nc_inq_varid(nc,:data);
 data = zeros(T,sz)
+#=
 @btime NetCDF3.nc_get_var!(nc,NetCDF3_varid,data);
-#close(nc)
 @test data == data_ref;
+=#
+#close(nc)
 
 @info "libnetcdf"
 
@@ -28,17 +30,16 @@ ncvar = ds["data"].var;
 ncid = ds.ncid
 varid = ncvar.varid
 
-#using Preferences, NetCDF_jll
-#set_preferences!(NetCDF_jll, "libnetcdf_path" => "/usr/lib/x86_64-linux-gnu/libnetcdf.so.13")
-
-@btime ccall((:nc_get_var,lib),Cint,(Cint,Cint,Ptr{Nothing}),$ncid,$varid,$data)
+#=
+@btime ccall((:nc_get_var,NCDatasets.libnetcdf),Cint,(Cint,Cint,Ptr{Nothing}),$ncid,$varid,$data)
+@test data == data_ref;
+=#
 
 close(ds)
-@test data == data_ref;
 
 # random access
 
-nobs = 100_000
+nobs = 1_00
 
 indices = [ntuple(i -> rand(1:sz[i]),length(sz)) for n = 1:nobs]
 data_obs = zeros(nobs)
@@ -54,22 +55,7 @@ end
 data_obs_ref = [data_ref[ind...] for ind in indices]
 @test data_obs == data_obs_ref
 
-
-data = @btime begin
-
-    @btime ccall((:nc_get_var1,libnetcdf),Cint,(Cint,Cint,Ptr{Csize_t},Ptr{Nothing}),
-                 $ncid,$varid,ind,tmp))
-
-    @btime ccall((:nc_get_var1,NCDatasets.libnetcdf),Cint,
-                 (Cint,Cint,Ptr{Nothing}),$ncid,$varid,$data)
-
-    [NetCDF3.nc_get_var1($nc,$NetCDF3_varid,ind) for ind in $indices]
-end;
-
-
-
-indicesC = map(ijk -> collect(reverse(ijk)) .- 1,indices)
-
+nc
 
 
 
