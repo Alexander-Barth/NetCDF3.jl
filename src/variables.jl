@@ -1,21 +1,7 @@
 
 
-function Var(nc,varid::Integer)
-    v = nc.vars[varid+1]
-
-    _isrec = any(dimid -> nc._dimid[dimid] == 0, v.dimids)
-    return Var{v.T,length(v.dimids),typeof(nc),_isrec}(
-                nc,
-                v.name,
-                v.sz,
-                v.varid,
-                v.dimids,
-                v.vsize)
-end
-
-
 function Var(nc,varid,T,name,dimids)
-    sz,vsize = _vsize(nc._dimids,dimids,T)
+    sz,vsize = _vsize(nc._dimid,dimids,T)
 
     _isrec = any(dimid -> nc._dimid[dimid] == 0, dimids)
 
@@ -28,7 +14,11 @@ function Var(nc,varid,T,name,dimids)
                 vsize)
 end
 
-#Base.eltype(v::Var{T}) where T = T
+
+function Var(nc,varid::Integer)
+    v = nc.vars[varid+1]
+    Var(nc,varid,v.T,v.name,v.dimids)
+end
 
 function Base.size(var::Var)
     ntuple(length(var.dimids)) do i

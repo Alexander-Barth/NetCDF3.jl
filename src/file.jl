@@ -202,25 +202,6 @@ function try_write_header(io,recs,dims,attrib,vars,::Type{Toffset},offset0) wher
     return start
 end
 
-function write_header(io,dims,attrib,vars,Toffset)
-    version_byte = 2
-    Toffset = (version_byte == 1 ? Int32 : Int64)
-
-    seekstart(io)
-    offset0 = Toffset(1024)
-    min_padding = 256
-
-    start = try_write_header(io,dims,attrib,vars,Toffset,offset0)
-    if position(io)+min_padding > start[1]
-        # need larger header section
-        offset0 = position(io)+min_padding
-        start = write_header(io,dims,attrib,vars,Toffset,offset0)
-    end
-
-    return start
-end
-
-
 
 function nc_create(io,format=:netcdf3_64bit_offset)
     version_byte =
