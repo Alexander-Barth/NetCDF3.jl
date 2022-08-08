@@ -165,12 +165,22 @@ function nc_get_var(nc::File,var)
     return nc_get_var!(nc,var,data)
 end
 
-function nc_get_var1(nc::File,var,index)
+function nc_get_var1(nc::File,var,indices)
     index = var.varid+1
+    offset = nc.start[index]
 
     if isrec(var)
+
     else
-        seek(nc.io,nc.start[index] + )
-        unpack_read!(nc.io,data)
+        off = 1
+        T = eltype(var)
+
+        for (i,len) in zip(indices,var.size)
+            offset += (i-1) * off * sizeof(T)
+            off = off * len
+        end
+
+        seek(nc.io,offset)
+        return unpack_read(nc.io,eltype(var))
     end
 end

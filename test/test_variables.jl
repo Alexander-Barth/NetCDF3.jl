@@ -14,8 +14,11 @@ dimid2 = NetCDF3.nc_def_dim(nc,:lat,3)
 varid = NetCDF3.nc_def_var(nc,:lon,Float64,(dimid1,))
 NetCDF3.nc_put_var(nc,varid,lon_ref)
 NetCDF3.nc_put_att(nc,varid,:units,Vector{UInt8}("degree east"))
+
 varid = NetCDF3.nc_def_var(nc,:data,Int32,(dimid1,dimid2))
+NetCDF3.nc_put_var(nc,varid,data_ref)
 NetCDF3.nc_put_att(nc,varid,:add_offset,[Int32(0)])
+
 
 NetCDF3.nc_close(nc)
 
@@ -37,4 +40,19 @@ varid = NetCDF3.nc_inq_varid(nc,:data)
 @test NetCDF3.nc_inq_vardimid(nc,varid) == (0,1)
 @test NetCDF3.nc_inq_varnatts(nc,varid) == 1
 
-close(nc)
+
+var = varid
+
+
+for j = 1:size(data_ref,2)
+    for i = 1:size(data_ref,1)
+        @test NetCDF3.nc_get_var1(nc,varid,(i,j)) == data_ref[i,j]
+    end
+end
+
+
+@btime NetCDF3.nc_get_var1(nc,varid,(1,1))
+
+
+
+#close(nc)
