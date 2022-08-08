@@ -4,7 +4,6 @@ function Var(nc,varid::Integer)
     v = nc.vars[varid+1]
 
     _isrec = any(dimid -> nc._dimid[dimid] == 0, v.dimids)
-
     return Var{v.T,length(v.dimids),typeof(nc),_isrec}(
                 nc,
                 v.name,
@@ -12,6 +11,21 @@ function Var(nc,varid::Integer)
                 v.varid,
                 v.dimids,
                 v.vsize)
+end
+
+
+function Var(nc,varid,T,name,dimids)
+    sz,vsize = _vsize(nc._dimids,dimids,T)
+
+    _isrec = any(dimid -> nc._dimid[dimid] == 0, dimids)
+
+    return Var{T,length(dimids),typeof(nc),_isrec}(
+                nc,
+                name,
+                sz,
+                varid,
+                dimids,
+                vsize)
 end
 
 #Base.eltype(v::Var{T}) where T = T
@@ -149,4 +163,14 @@ function nc_get_var(nc::File,var)
     sz = size(var)
     data = Array{eltype(var),length(sz)}(undef,sz...)
     return nc_get_var!(nc,var,data)
+end
+
+function nc_get_var1(nc::File,var,index)
+    index = var.varid+1
+
+    if isrec(var)
+    else
+        seek(nc.io,nc.start[index] + )
+        unpack_read!(nc.io,data)
+    end
 end
