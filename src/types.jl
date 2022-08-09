@@ -1,8 +1,8 @@
 mutable struct File{TIO <: IO, TV}
     io::TIO
     write::Bool
-    version_byte::UInt8
-    recs::Int32
+    version::UInt8
+    recs::Int64
     dim::OrderedDict{Symbol,Int}
     _dimid::OrderedDict{Int,Int}
     attrib::OrderedDict{Symbol,Any}
