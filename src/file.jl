@@ -261,12 +261,14 @@ function nc_close(nc)
     Tsize = (nc.version < 5 ? Int32 : Int64)
 
     start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,Toffset,Tsize,offset0)
-    @debug offset0, start[1]
+    header = take!(memio)
+    @debug offset0, start[1], sizeof(header)
     @assert offset0 >= start[1]
+    @assert offset0 >= sizeof(header) "headers larger than $offset0 not yet supported"
 
     # otherwise need to shift data in file to make room for larger header
     seekstart(nc.io)
-    write(nc.io,take!(memio))
+    write(nc.io,header)
     close(nc.io)
 end
 
