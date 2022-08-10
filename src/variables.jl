@@ -82,7 +82,7 @@ nc_inq_varnatts(nc::File,varid) = nc_inq_var(nc,varid)[4]
 nc_inq_varids(nc::File) = ((Var(nc,v.varid) for v in nc.vars)...,)
 
 function nc_def_var(nc,name,T,dimids)
-    offset = 1024
+    offset = nc.header_size_hint
     for v in nc.vars
         offset += v.vsize
     end

@@ -104,6 +104,8 @@ function nc_open(io,write)
         for varid = 0:count-1
             ]
 
+    header_size_hint = 1024 # unused
+
     File(
         io,
         write,
@@ -114,11 +116,13 @@ function nc_open(io,write)
         global_attrib,
         start,
         vars,
+        header_size_hint,
         ReentrantLock(),
     )
 end
 
-File(fname::AbstractString,args...) = File(open(fname),args...)
+File(fname::AbstractString,args...; kwargs...) =
+    File(open(fname),args...; kwargs...)
 
 File(io::IO) = nc_open(io,false)
 
@@ -132,13 +136,17 @@ File(io::IO) = nc_open(io,false)
 
 netCDF4 is not supported and not within scope.
 """
-function File(fname::AbstractString,mode="r"; lock = true, format = :netcdf3_classic)
+function File(fname::AbstractString,mode="r";
+              lock = true,
+              format = :netcdf3_classic,
+              header_size_hint = 1024)
     if mode == "r"
         io = open(fname,write=false,lock=lock)
         nc_open(io,false)
     elseif mode == "c"
         io = open(fname,"w+",lock=lock)
-        nc_create(io, format = format)
+        nc_create(io, format = format,
+                  header_size_hint = header_size_hint)
     end
 end
 
@@ -217,7 +225,52 @@ function try_write_header(io,recs,dims,attrib,vars,
     return start
 end
 
-function nc_create(io; format=:netcdf3_64bit_offset)
+
+"""
+Shift all bytes at position `pos` and later by `size` bytes towards
+the end of the file using the buffer `buffer`.
+
+For example is the file initially contains the bytes
+`0123456789A`, `pos = 2` and `size = 4` would transform the
+file into  `01????23456789A`  (where `?` are undefined).
+
+"""
+function file_shift!(io,pos,size,buffer::Vector{UInt8})
+    seekend(io)
+    end_pos = position(io) # position is zero-based
+    cursor = end_pos
+
+    @assert size > 0
+
+    # start from the end and walk up
+    while true
+        len = min(length(buffer),cursor-pos)
+        cursor -= len
+
+        seek(io,cursor)
+        read!(io,view(buffer,1:len))
+
+        if !(typeof(io) <: IOStream)
+            # pad if necessary
+            # for IOStream's files this seem to be automatic
+            # The fseek() function shall allow the file-position indicator to be set beyond the end of existing data in the file. If data is later written at this point, subsequent reads of data in the gap shall return bytes with the value 0 until data is actually written into the gap.
+
+            # https://web.archive.org/web/20210723013350/https://pubs.opengroup.org/onlinepubs/009696899/functions/fseek.html
+            if cursor+size > end_pos
+                write(io,[0x00 for i in 1:(cursor+size-end_pos)])
+            end
+        end
+        seek(io,cursor+size);
+        write(io,view(buffer,1:len))
+
+        if cursor == pos
+            break
+        end
+    end
+end
+
+
+function nc_create(io; format=:netcdf3_64bit_offset, header_size_hint = 1024)
     version =
         if format == :netcdf3_classic
             UInt8(1)
@@ -247,26 +300,46 @@ function nc_create(io; format=:netcdf3_64bit_offset)
         attrib,
         start,
         vars,
+        header_size_hint,
         ReentrantLock(),
     )
 end
 
 
+
 function nc_close(nc)
     memio = IOBuffer()
-    offset0 = 1024
-    Toffset = Int
+    offset0 = nc.header_size_hint
 
     Toffset = (nc.version == 1 ? Int32 : Int64)
     Tsize = (nc.version < 5 ? Int32 : Int64)
 
     start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,Toffset,Tsize,offset0)
     header = take!(memio)
-    @debug offset0, start[1], sizeof(header)
-    @assert offset0 >= start[1]
-    @assert offset0 >= sizeof(header) "headers larger than $offset0 not yet supported"
+    @debug "data section starts: $offset0, actually header size $(sizeof(header))"
+
+    #@assert offset0 >= sizeof(header) "headers larger than $offset0 not yet supported"
 
     # otherwise need to shift data in file to make room for larger header
+    if sizeof(header) > start[1]
+        @debug "shift data section by $(sizeof(header) - start[1]) byte(s)."
+        @debug "best value for header_size_hint is $(sizeof(header)) bytes."
+
+        buffer = Vector{UInt8}(undef,1024)
+        pos = offset0
+        size = sizeof(header) - start[1]
+        lock(nc.lock) do
+            file_shift!(nc.io,pos,size,buffer)
+        end
+        offset0 = sizeof(header)
+
+        start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,
+                                 Toffset,Tsize,offset0)
+        header = take!(memio)
+    end
+
+    @assert offset0 >= sizeof(header)
+
     seekstart(nc.io)
     write(nc.io,header)
     close(nc.io)

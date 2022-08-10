@@ -9,4 +9,5 @@ using NCDatasets
     include("test_write.jl")
     include("test_dimensions.jl")
     include("test_variables.jl")
+    include("test_large_metadata.jl")
 end

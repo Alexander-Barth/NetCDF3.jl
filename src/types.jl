@@ -8,6 +8,7 @@ mutable struct File{TIO <: IO, TV}
     attrib::OrderedDict{Symbol,Any}
     start::Vector{Int64}
     vars::Vector{TV}
+    header_size_hint::Int64
     lock::ReentrantLock
 end
 

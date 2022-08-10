@@ -14,6 +14,7 @@ for format = [
     :netcdf5_64bit_data,
 ]
 
+    local ds, data, varid, dimid1, dimid2, nc, add_offset
     #fname = "/tmp/tmp.nc"
     nc = NetCDF3.File(fname,"c"; format = format)
     dimid1 = NetCDF3.nc_def_dim(nc,:lon,2)

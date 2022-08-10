@@ -31,6 +31,7 @@ const NC_DIMENSION = 0x0000000a
 const NC_VARIABLE = 0x0000000b
 const NC_ATTRIBUTE = 0x0000000c
 
+const NC_GLOBAL = nothing
 
 const TYPEMAP = Dict(
     NC_BYTE   => Int8,

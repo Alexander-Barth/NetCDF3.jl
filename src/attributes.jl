@@ -51,3 +51,12 @@ end
 function nc_get_att(nc,var,name)
     return nc.vars[var.varid+1].attrib[Symbol(name)]
 end
+
+
+function nc_put_att(nc,var::Nothing,name,data)
+    nc.attrib[Symbol(name)] = data
+end
+
+function nc_get_att(nc,var::Nothing,name)
+    return nc.attrib[Symbol(name)]
+end
