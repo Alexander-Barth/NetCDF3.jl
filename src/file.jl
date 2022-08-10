@@ -75,7 +75,7 @@ function nc_open(io,write)
     end
 
     # global attributes
-    attrib = read_attributes(io,Tsize)
+    global_attrib = read_attributes(io,Tsize)
 
     # variables
     header = unpack_read(io,UInt32)
@@ -111,7 +111,7 @@ function nc_open(io,write)
         recs,
         dim,
         _dimid,
-        attrib,
+        global_attrib,
         start,
         vars,
         ReentrantLock(),
