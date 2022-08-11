@@ -48,6 +48,9 @@ for i = 1:30
     nc_put_att(nc,NC_GLOBAL,"attribute-$i",Vector{UInt8}("attribute-$i"))
 end
 
+
+@test NetCDF3.nc_header_size(nc) > 1024
+
 nc_close(nc)
 
 

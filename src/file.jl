@@ -306,19 +306,22 @@ function nc_create(io; format=:netcdf3_64bit_offset, header_size_hint = 1024)
 end
 
 
-
-function nc_close(nc)
+function nc_header(nc; offset = nc.header_size_hint)
     memio = IOBuffer()
-    offset0 = nc.header_size_hint
 
     Toffset = (nc.version == 1 ? Int32 : Int64)
     Tsize = (nc.version < 5 ? Int32 : Int64)
 
-    start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,Toffset,Tsize,offset0)
-    header = take!(memio)
-    @debug "data section starts: $offset0, actually header size $(sizeof(header))"
+    start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,
+                             Toffset,Tsize,offset)
 
-    #@assert offset0 >= sizeof(header) "headers larger than $offset0 not yet supported"
+    return take!(memio),start
+end
+
+nc_header_size(nc) = sizeof(nc_header(nc)[1])
+
+function nc_close(nc)
+    header,start = nc_header(nc)
 
     # otherwise need to shift data in file to make room for larger header
     if sizeof(header) > start[1]
@@ -326,19 +329,15 @@ function nc_close(nc)
         @debug "best value for header_size_hint is $(sizeof(header)) bytes."
 
         buffer = Vector{UInt8}(undef,1024)
-        pos = offset0
+        pos = nc.header_size_hint
         size = sizeof(header) - start[1]
         lock(nc.lock) do
             file_shift!(nc.io,pos,size,buffer)
         end
-        offset0 = sizeof(header)
-
-        start = try_write_header(memio,nc.recs,nc.dim,nc.attrib,nc.vars,
-                                 Toffset,Tsize,offset0)
-        header = take!(memio)
+        header,start = nc_header(nc; offset = sizeof(header))
     end
 
-    @assert offset0 >= sizeof(header)
+    @assert start[1] >= sizeof(header)
 
     seekstart(nc.io)
     write(nc.io,header)
