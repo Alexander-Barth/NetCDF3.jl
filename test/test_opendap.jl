@@ -20,8 +20,10 @@ function parsetype(type)
         Int32
     elseif type == "Int64"
         Int64
+    elseif type == "String"
+        String
     else
-        error("unknown type $type in $url")
+        error("unknown type $type")
     end
 end
 
@@ -30,76 +32,22 @@ struct Dimension
     len::Int64
 end
 
-struct OArray{T,N}
+struct Variable{T,N}
     name::String
     dims::NTuple{N,Dimension}
 end
 
-struct Grid1
+struct Grid
     name::String
     arrays
     maps
 end
 
-struct Dataset1
+struct Dataset
     name::String
     variables
 end
 
-function Base.parse(::Type{Dimension},s)
-    parts = split(s,'=',limit=2)
-    return Dimension(strip(parts[1]),parse(Int64,parts[2]))
-end
-
-#function Base.parse(::Type{Array},str)
-
-
-
-function oparse(str,i=0)
-    iend = findnext(' ',str,i+1)
-    type = str[i+1:iend-1]
-
-    if type == "Grid"
-
-    end
-    i=iend
-
-    iend = min(findnext('[',str,i+1),findnext(';',str,i+1))
-    name = str[i+1:iend-1]
-
-    i = iend
-
-    d = Dimension[]
-    while i < ncodeunits(str)
-        if str[i+1] == ';'
-            break
-        end
-        iend = findnext(']',str,i+1)
-
-        push!(d,parse(Dimension,str[i+1:iend-1]))
-        i = iend+1;
-    end
-
-    OArray{parsetype(type),length(d)}(name,(d...,))
-end
-
-
-
-d = parse(Dimension,"lon = 180")
-
-@test d.name == "lon"
-@test d.len == 180
-
-
-str = "Float32 lat[lat = 89];"
-a = oparse(str)
-
-
-@test a.dims[1].name == "lat"
-@test a.dims[1].len == 89
-
-
-str = "{ foo { barα∀ } baz } lala"
 
 function token_paren(str,bp,ep,i0=1)
     level = 0
@@ -121,15 +69,39 @@ function token_paren(str,bp,ep,i0=1)
     return nothing # unmatched parentesis
 end
 
-
-
+str = "{ foo { barα∀ } baz } lala"
 i0 = 1
 i = token_paren(str,'{','}',i0)
-#@show str[i0:i]
 
-function nextws(str,i0)
-    i = findnext(' ',str,i0)
+function token_string(str,i0=1,strquote='"')
+    i = i0
+
+    @assert str[i] == strquote
+
+    i = nextind(str,i)
+
+    while i <= ncodeunits(str)
+        c = str[i]
+        if c == strquote
+            return (:string,i0:i)
+        elseif (c == '\\') && (i < ncodeunits(str))
+            i = nextind(str,i)
+        end
+
+        i = nextind(str,i)
+    end
+    return nothing # unmatched parentesis
 end
+
+str = "\"foo\" BAR"
+type,irange = token_string(str)
+@test str[irange] == "\"foo\""
+
+str = """"fo\\\"o" BAR"""
+print(str)
+type,irange = token_string(str)
+@test str[irange] == "\"fo\\\"o\""
+
 function nexttoken(str,i0=1)
     i = i0
     while i <= ncodeunits(str)
@@ -150,14 +122,16 @@ function nexttoken(str,i0=1)
     elseif str[i] == '['
         j = token_paren(str,'[',']',i)
         return (:square_braces,i:j)
-    elseif str[i] in ('=',':',';')
+    elseif str[i] == '"'
+        return token_string(str,i)
+    elseif str[i] in ('=',':',';',',')
         return (Symbol(str[i]),i:i)
     end
 
     j = i
     while j <= ncodeunits(str)
         #@show j,str[j],str[j] == ' '
-        if str[j] in (' ','=','[',']','{','}',':',';')
+        if str[j] in (' ','=','[',']','{','}',':',';','"',',')
             #@show i,j,str[j],prevind(str,j)
             return (:token,i:prevind(str,j))
         end
@@ -186,47 +160,6 @@ t,irange = nexttoken(str)
 @test str[irange] == "{ lala {} ∀}"
 
 
-str = """Grid {
-      Array:
-        Int16 sst[time = 1857][lat = 89][lon = 180];
-      Maps:
-        Float64 time[time = 1857];
-        Float32 lat[lat = 89];
-        Float32 lon[lon = 180];
-    } sst;
-"""
-
-i = 1
-
-while i < ncodeunits(str)
-    global i
-    local t
-    local irange
-    t,irange = nexttoken(str,i)
-
-    #@show str[irange]
-    i = irange[end]+1
-end
-
-irange = 1:0
-t,irange = nexttoken(str,last(irange)+1)
-str[irange] == "Grid"
-
-t,irange = nexttoken(str,last(irange)+1)
-t == :curly_braces
-t,irange = nexttoken(str,first(irange)+1)
-str[irange] == "Array"
-t,irange = nexttoken(str,last(irange)+1)
-str[irange] == ":"
-
-t,irange = nexttoken(str,last(irange)+1)
-type = str[irange]
-
-t,irange = nexttoken(str,last(irange)+1)
-type = str[irange]
-
-i0 = 1
-i = findnext(' ',str,i0)
 
 dds = """Dataset {
     Float32 lat[lat = 89];
@@ -306,7 +239,7 @@ function parsett(str,type,i=1)
 
     @assert t == Symbol(';')
 
-    return (OArray{parsetype(type),length(dims)}(name,(dims...,)),last(irange)+1)
+    return (Variable{parsetype(type),length(dims)}(name,(dims...,)),last(irange)+1)
 end
 
 function parseds(str,i=1)
@@ -333,7 +266,7 @@ function parseds(str,i=1)
     t,irange = nexttoken(str,last(irange)+1)
     @assert t == Symbol(';')
 
-    return (Dataset1(name,variables),last(irange)+1)
+    return (Dataset(name,variables),last(irange)+1)
 end
 
 function parsegrid(str,i=1)
@@ -378,7 +311,7 @@ function parsegrid(str,i=1)
 
     type = "Grid";
     #return ((;type,array,maps,name),last(irange)+1)
-    return (Grid1(name,array,maps),last(irange)+1)
+    return (Grid(name,array,maps),last(irange)+1)
 
 end
 
@@ -387,30 +320,6 @@ str = dds
 
 data,iend = parse2(str)
 @show data
-#=
-irange = 1:0
-t,irange = nexttoken(str,last(irange)+1)
-str[irange] == "Dataset"
-
-
-
-
-t,irange = nexttoken(str,last(irange)+1)
-str[irange] == "Grid"
-
-t,irange = nexttoken(str,last(irange)+1)
-t == :curly_braces
-t,irange = nexttoken(str,first(irange)+1)
-str[irange] == "Array"
-t,irange = nexttoken(str,last(irange)+1)
-str[irange] == ":"
-
-t,irange = nexttoken(str,last(irange)+1)
-type = str[irange]
-
-t,irange = nexttoken(str,last(irange)+1)
-type = str[irange]
-=#
 
 das = """Attributes {
     lat {
@@ -489,6 +398,97 @@ Smith, T.M., and R.W. Reynolds, 2003: Extended Reconstruction of Global Sea Surf
 }"""
 
 
+struct AttribVal{T,N}
+    name::String
+    values::NTuple{N,T}
+end
+
+function parseatt(str,i=1)
+    irange=i:(i-1)
+    t,irange = nexttoken(str,last(irange)+1)
+
+    if (t == :nothing) || (str[irange] == "")
+        return (nothing,0)
+    end
+    T = parsetype(str[irange])
+
+    t,irange = nexttoken(str,last(irange)+1)
+    name = str[irange]
+
+    v = T[]
+
+    while true
+        t,irange = nexttoken(str,last(irange)+1)
+
+        if t == Symbol(";")
+            break
+        elseif t == Symbol(",")
+        else
+            if T == String
+                push!(v,str[irange])
+            else
+                push!(v,parse(T,str[irange]))
+            end
+        end
+    end
+    return (AttribVal(name,(v...,)),last(irange)+1)
+end
+
+
+@show parseatt("Float32 actual_range 88.0000000, -88.0000000;")
+
+@show parseatt("")
+
+str = das
+
+using DataStructures
+att = OrderedDict();
+
+i = 1
+irange = i:(i-1)
+t,irange = nexttoken(str,last(irange)+1)
+str[irange] == "Attributes"
+
+t,irange0 = nexttoken(str,last(irange)+1)
+t == :curly_braces
+
+II = first(irange0)+1
+
+while true
+    global II
+    t,irange = nexttoken(str,II)
+
+    @show t,str[irange]
+    if (t == :nothing) || (str[irange] == "")
+        break
+    end
+
+    varname = str[irange]
+
+    t,irange = nexttoken(str,last(irange)+1)
+    @assert t == :curly_braces
+
+    al = []
+    al2 = OrderedDict();
+
+    i = first(irange)+1
+    while true
+        #global i
+        av,i = parseatt(str,i)
+        if av == nothing
+            break
+        end
+
+        push!(al,av)
+        al2[av.name] = av.values
+    end
+
+    att[varname] = al2
+
+    II = last(irange)+1
+end
+
+i
 
 # https://datatracker.ietf.org/doc/html/rfc1832
 
