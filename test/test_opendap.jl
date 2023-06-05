@@ -95,7 +95,7 @@ function token_paren(str,bp,ep,i0=1)
     level = 0
     i = i0
 
-    while i < ncodeunits(str)
+    while i <= ncodeunits(str)
         c = str[i]
         if c == bp # (
             level += 1
@@ -115,18 +115,23 @@ end
 
 i0 = 1
 i = token_paren(str,'{','}',i0)
-@show str[i0:i]
+#@show str[i0:i]
 
 function nextws(str,i0)
     i = findnext(' ',str,i0)
 end
 function nexttoken(str,i0=1)
     i = i0
-    while i < ncodeunits(str)
+    while i <= ncodeunits(str)
         if !(str[i] in (' ','\n'))
             break
         end
         i = nextind(str,i)
+    end
+
+    #@show str,i,str[i]
+    if i > ncodeunits(str)
+        return (:nothing,i0:(i0-1))
     end
 
     if str[i] == '{'
@@ -136,14 +141,14 @@ function nexttoken(str,i0=1)
         j = token_paren(str,'[',']',i)
         return (:square_braces,i:j)
     elseif str[i] in ('=',':',';')
-        return (:stuff,i:i)
+        return (Symbol(str[i]),i:i)
     end
 
     j = i
-    while j < ncodeunits(str)
+    while j <= ncodeunits(str)
         #@show j,str[j],str[j] == ' '
-        if str[j] in (' ','=','[',']','{','}',':')
-            #@show i,j,prevind(str,j)
+        if str[j] in (' ','=','[',']','{','}',':',';')
+            #@show i,j,str[j],prevind(str,j)
             return (:token,i:prevind(str,j))
         end
         j = nextind(str,j)
@@ -185,9 +190,11 @@ i = 1
 
 while i < ncodeunits(str)
     global i
+    local t
+    local irange
     t,irange = nexttoken(str,i)
 
-    @show str[irange]
+    #@show str[irange]
     i = irange[end]+1
 end
 
@@ -226,32 +233,69 @@ dds = """Dataset {
     } sst;
 } sst.mnmean.nc;"""
 
+#=
 dds = """Dataset {
     Float32 lat[lat = 89];
+    Float32 lon[lon = 180];
 } sst.mnmean.nc;"""
-
+=#
 function parse2(str,i=1)
     irange=i:(i-1)
 
     t,irange = nexttoken(str,last(irange)+1)
+
+    if (t == :nothing) || (str[irange] == "")
+        return (:nothing,last(irange)+1)
+    end
+
     if str[irange] == "Dataset"
+        #@show str,last(irange)+1
         return parseds(str,last(irange)+1)
-    elseif str[irange] == "Float32"
+    elseif str[irange] == "Grid"
+        return parsegrid(str,last(irange)+1)
+    elseif str[irange] in ("Float32","Float64","Int16")
         return parsett(str,str[irange],last(irange)+1)
     end
 
+    error("unknown $(str[irange])")
+#    @show "this is the end",t,str[irange],i
 end
 
-function parsett(str,tt,i=1)
+
+function parsedim(str,i=1)
     irange=i:(i-1)
 
     t,irange = nexttoken(str,last(irange)+1)
     name = str[irange]
 
     t,irange = nexttoken(str,last(irange)+1)
+    @assert t == Symbol('=')
+
+    t,irange = nexttoken(str,last(irange)+1)
+    len = parse(Int64,str[irange])
+    return (; name,len)
+end
+
+
+function parsett(str,type,i=1)
+    irange=i:(i-1)
+#    @show "tt",str[i:end]
+
+    t,irange = nexttoken(str,last(irange)+1)
     name = str[irange]
 
-    return ((tt,name),last(irange)+1)
+    dims = []
+    t,irange = nexttoken(str,last(irange)+1)
+
+    while t == :square_braces
+        d = parsedim(str,first(irange)+1)
+        push!(dims,d)
+        t,irange = nexttoken(str,last(irange)+1)
+    end
+
+    @assert t == Symbol(';')
+
+    return ((;type,name,dims),last(irange)+1)
 end
 
 function parseds(str,i=1)
@@ -260,19 +304,79 @@ function parseds(str,i=1)
     t,irange = nexttoken(str,last(irange)+1)
     @assert t == :curly_braces
 
-    data,iend = parse2(str,first(irange)+1)
+    variables = []
+    v,iend = parse2(str,first(irange)+1)
 
-    t,irange = nexttoken(str,iend+1)
+    while v !== :nothing
+        push!(variables,v)
+        v,iend = parse2(str,iend)
+    end
+
+
+    #@show iend
+    #@show iend,str[iend]
+    t,irange = nexttoken(str,last(irange)+1)
+    #@show str[irange]
     name = str[irange]
 
-    return ("Dataset",data,name)
+    t,irange = nexttoken(str,last(irange)+1)
+    @assert t == Symbol(';')
+
+    type = "Dataset";
+    return ((;type,variables,name),last(irange)+1)
+end
+
+function parsegrid(str,i=1)
+    #@show "grid",i
+    irange=i:(i-1)
+
+    t,irange = nexttoken(str,last(irange)+1)
+    @assert t == :curly_braces
+
+
+    t,irange = nexttoken(str,first(irange)+1)
+    @assert str[irange] == "Array"
+
+    t,irange = nexttoken(str,last(irange)+1)
+    #@show str[irange]
+    @assert str[irange] == ":"
+
+    array,iend = parse2(str,last(irange)+1)
+    #@show array
+
+    t,irange = nexttoken(str,iend)
+    #@show str[irange]
+    @assert str[irange] == "Maps"
+
+    t,irange = nexttoken(str,last(irange)+1)
+    #@show str[irange]
+    @assert str[irange] == ":"
+
+    maps = []
+    v,iend = parse2(str,last(irange)+1)
+    while v !== :nothing
+        push!(maps,v)
+        v,iend = parse2(str,iend)
+    end
+    #@show v,iend,str[iend]
+    t,irange = nexttoken(str,iend+1)
+    #@show str[irange]
+    name = str[irange]
+
+    t,irange = nexttoken(str,last(irange)+1)
+    @assert t == Symbol(';')
+
+    type = "Grid";
+    return ((;type,array,maps,name),last(irange)+1)
+
 end
 
 
 str = dds
 
-parse2(str)
-
+data,iend = parse2(str)
+@show data
+#=
 irange = 1:0
 t,irange = nexttoken(str,last(irange)+1)
 str[irange] == "Dataset"
@@ -295,7 +399,7 @@ type = str[irange]
 
 t,irange = nexttoken(str,last(irange)+1)
 type = str[irange]
-
+=#
 
 das = """Attributes {
     lat {
