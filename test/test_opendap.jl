@@ -16,6 +16,10 @@ function parsetype(type)
         Float64
     elseif type == "Int16"
         Int16
+    elseif type == "Int32"
+        Int32
+    elseif type == "Int64"
+        Int64
     else
         error("unknown type $type in $url")
     end
@@ -31,9 +35,15 @@ struct OArray{T,N}
     dims::NTuple{N,Dimension}
 end
 
-struct Grid0
+struct Grid1
+    name::String
     arrays
     maps
+end
+
+struct Dataset1
+    name::String
+    variables
 end
 
 function Base.parse(::Type{Dimension},s)
@@ -273,7 +283,8 @@ function parsedim(str,i=1)
 
     t,irange = nexttoken(str,last(irange)+1)
     len = parse(Int64,str[irange])
-    return (; name,len)
+
+    return Dimension(name,len)
 end
 
 
@@ -295,7 +306,7 @@ function parsett(str,type,i=1)
 
     @assert t == Symbol(';')
 
-    return ((;type,name,dims),last(irange)+1)
+    return (OArray{parsetype(type),length(dims)}(name,(dims...,)),last(irange)+1)
 end
 
 function parseds(str,i=1)
@@ -322,8 +333,7 @@ function parseds(str,i=1)
     t,irange = nexttoken(str,last(irange)+1)
     @assert t == Symbol(';')
 
-    type = "Dataset";
-    return ((;type,variables,name),last(irange)+1)
+    return (Dataset1(name,variables),last(irange)+1)
 end
 
 function parsegrid(str,i=1)
@@ -367,7 +377,8 @@ function parsegrid(str,i=1)
     @assert t == Symbol(';')
 
     type = "Grid";
-    return ((;type,array,maps,name),last(irange)+1)
+    #return ((;type,array,maps,name),last(irange)+1)
+    return (Grid1(name,array,maps),last(irange)+1)
 
 end
 
