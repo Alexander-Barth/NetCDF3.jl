@@ -1,7 +1,11 @@
 using HTTP
 using Test
-
+using CommonDataModel
+import CommonDataModel: AbstractDataset, variable, AbstractVariable,
+    attribnames, attrib, dimnames, name
+import Base: keys, size, getindex
 import Base: parse
+using BenchmarkTools
 
 #=
 url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.das"
@@ -32,11 +36,13 @@ struct Dimension
     len::Int64
 end
 
-struct Variable{T,N,TP}
+struct Variable{T,N,TP} <: AbstractVariable{T,N}
     name::String
     dims::NTuple{N,Dimension}
     parent::TP
 end
+
+CommonDataModel.name(v::Variable) = v.name
 
 struct Grid
     name::String
@@ -138,7 +144,7 @@ function nexttoken(str,i0=1)
         end
         j = nextind(str,j)
     end
-    println("close")
+
     return (:token,i:ncodeunits(str))
 end
 
@@ -322,7 +328,6 @@ end
 str = dds
 
 data,iend = parse2(str)
-@show data
 
 das = """Attributes {
     lat {
@@ -423,13 +428,22 @@ function parseatt(str,i=1)
         elseif t == Symbol(",")
         else
             if T == String
-                push!(v,str[irange])
+                push!(v,str[irange][2:end-1]) # skip quotes
             else
                 push!(v,parse(T,str[irange]))
             end
         end
     end
-    return (name,(v...,),last(irange)+1)
+
+    va =
+        if length(v) == 1
+            v[1]
+        else
+            v
+        end
+    #@info "attrib" name,va
+
+    return (name,va,last(irange)+1)
 end
 
 function parsedas(str,i=1)
@@ -448,7 +462,7 @@ function parsedas(str,i=1)
     while true
         t,irange = nexttoken(str,II)
 
-        @show t,str[irange]
+        #@show t,str[irange]
         if (t == :nothing) || (str[irange] == "")
             break
         end
@@ -477,9 +491,9 @@ function parsedas(str,i=1)
     return att
 end
 
-@show parseatt("Float32 actual_range 88.0000000, -88.0000000;")
+#@show parseatt("Float32 actual_range 88.0000000, -88.0000000;")
 
-@show parseatt("")
+#@show parseatt("")
 
 str = das
 
@@ -488,19 +502,31 @@ using DataStructures
 
 att = parsedas(str)
 
-@show att
 
-using CommonDataModel: AbstractDataset, variable
-import Base: keys
 
 
 #module OPeNDAP
+
+_list_var(ds,d::Dataset) = _list_var.(Ref(ds),d.variables)
+_list_var(ds,v::Variable{T,N}) where {T,N} = Variable{T,N,typeof(ds)}(v.name,v.dims,ds)
+_list_var(ds,v::Grid) = _list_var(ds,v.arrays)
+_list_var(ds,v) = nothing
 
 struct Dataset3 <: AbstractDataset
     url::String
     dds
     das
 end
+
+CommonDataModel.attribnames(ds::Dataset3) = keys(ds.das["NC_GLOBAL"])
+CommonDataModel.attrib(ds::Dataset3,name::Union{AbstractString, Symbol}) = ds.das["NC_GLOBAL"][name]
+CommonDataModel.attribnames(v::Variable) = keys(v.parent.das[name(v)])
+function CommonDataModel.attrib(v::Variable,attname::Union{AbstractString, Symbol})
+    v.parent.das[name(v)][attname]
+end
+
+Base.size(v::Variable) = reverse(ntuple(i -> v.dims[i].len,ndims(v)))
+CommonDataModel.dimnames(v::Variable) = reverse(ntuple(i -> v.dims[i].name,ndims(v)))
 
 
 function Dataset3(url::AbstractString)
@@ -509,82 +535,130 @@ function Dataset3(url::AbstractString)
     Dataset3(url,parse2(dds)[1],parsedas(das))
 end
 
-_list_var(d::Dataset) = _list_var.(d.variables)
-_list_var(v::Variable) = v.name
-_list_var(v::Grid) = _list_var(v.arrays)
-_list_var(v) = nothing
 
-Base.keys(ds::Dataset3) = _list_var(ds.dds)
-
+Base.keys(ds::Dataset3) = name.(_list_var(ds,ds.dds))
+function CommonDataModel.variable(ds::Dataset3,n::Union{AbstractString, Symbol})
+    for v in _list_var(ds,ds.dds)
+        if name(v) == n
+            return v
+        end
+    end
+    error("no variable $n in dataset $(ds.url)")
+end
 url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz"
 
 ds = Dataset3(url);
-
+ds
 keys(ds)
+_list_var(ds,ds.dds)
+
+ds
+v = variable(ds,"lat");
+size(v)
+dimnames(v)
+
+CommonDataModel.attribs(v)
+ENV["JULIA_DEBUG"] = "CommonDataModel"
+
 ds
 
 
-
-# https://datatracker.ietf.org/doc/html/rfc1832
-
-#=
-
-#url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?lon"
-#url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?time"
-url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?sst[0:0][0:0][0:0]"
-#url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?sst[0:0][0:0][0:3]"
-
-r = HTTP.get(url); body = copy(r.body)
-
-io = IOBuffer(copy(body))
+#keys(ds)
+#ds
 
 
-line = readline(io)
-@assert line == "Dataset {"
-line = readline(io)
+dods_index(index::NTuple{N,<:AbstractRange}) where N = join(ntuple(i -> string('[',index[i] .- 1,']'),length(index)))
+dods_index(index::NTuple{N,Colon}) where N = ""
 
-@show line
-type,var = split(line,limit=2)
 
-T =
-    if type == "Float32"
-        Float32
-    elseif type == "Float64"
-        Float64
-    elseif type == "Int16"
-        Int16
-    else
-        error("unknown type $type in $url")
+function Base.getindex(v::Variable{T,N},index...) where {T,N}
+    ind = ntuple(N) do i
+        if index[i] isa Number
+            index:index
+        elseif index[i] isa Colon
+            1:size(v,i)
+        elseif index[i] isa AbstractRange
+            index[i]
+        else
+            error("index $index")
+        end
     end
-
-for line in eachline(io)
-
-    @show line
-    if strip(line) == "Data:"
-        break
-    end
+    #@show ind
+    return v[ind...]
 end
 
-count = hton(read(io,UInt32))
-@show Int(count)
+function Base.getindex(v::Variable{T,N},index::AbstractRange...) where {T,N}
+    url = string(v.parent.url,".dods?",name(v),dods_index(reverse(index)))
 
-a = hton(read(io,Int16))
-b = hton(read(io,Int16))
-#c = hton(read(io,Int16))
+    @debug "URL" url
+    # https://datatracker.ietf.org/doc/html/rfc1832
 
-@show a,b,c
-data = Vector{T}(undef,count)
 
-for i = 1:count
-    if T == Int16
-        skip = hton(read(io,Int16))
-        @show skip
+    #url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?lon"
+    #url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?time"
+    #url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?sst[0:0][0:0][0:0]"
+    #url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz.dods?sst[0:0][0:0][0:3]"
+
+    r = HTTP.get(url)
+    io = IOBuffer(r.body)
+
+    line = readline(io)
+    @assert line == "Dataset {"
+
+    for line in eachline(io)
+        @debug "data header" line
+        if strip(line) == "Data:"
+            break
+        end
     end
 
-    data[i] = hton(read(io,T))
+    count = hton(read(io,UInt32))
+
+    a = hton(read(io,Int16))
+    b = hton(read(io,Int16))
+
+    @debug "count " a,b,count
+    data = Array{T,N}(undef,length.(index)...)
+
+    @assert length(data) == count
+    @inbounds for i = 1:length(data)
+        if T == Int16
+            skip = hton(read(io,Int16))
+        end
+
+        data[i] = hton(read(io,T))
+    end
+
+    return data
 end
 
-@show data
+v = variable(ds,"time");
+data = v[:]
+
+@show data[1:5]
+
+
+index = (1:10,1:3)
+
+
+dods_index(index)
+t = ds["time"][:]
+
+sst = ds["sst"][1:3,1:3,1:2]
+
+lon = ds["lon"][:]
+lat = ds["lat"][:]
+
+sst = @btime ds["sst"][:,:,1:1];
+
+import NCDatasets
+dsnc = NCDatasets.Dataset(url);
+sst = @btime dsnc["sst"][:,:,1:1];
+
+a = replace(sst,missing => NaN)
+
+#using PyPlot
+#pcolormesh(lon,lat,a[:,:,1]')
 
 #=
 readline(io)
@@ -594,5 +668,4 @@ s = read(io,10)
 hton(read(io,UInt32))
 
 hton(read(io,Float32))
-=#
 =#
