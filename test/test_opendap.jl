@@ -32,9 +32,10 @@ struct Dimension
     len::Int64
 end
 
-struct Variable{T,N}
+struct Variable{T,N,TP}
     name::String
     dims::NTuple{N,Dimension}
+    parent::TP
 end
 
 struct Grid
@@ -238,8 +239,10 @@ function parsett(str,type,i=1)
     end
 
     @assert t == Symbol(';')
-
-    return (Variable{parsetype(type),length(dims)}(name,(dims...,)),last(irange)+1)
+    T = parsetype(type)
+    N = length(dims)
+    ds = nothing
+    return (Variable{T,N,typeof(ds)}(name,(dims...,),ds),last(irange)+1)
 end
 
 function parseds(str,i=1)
@@ -398,17 +401,12 @@ Smith, T.M., and R.W. Reynolds, 2003: Extended Reconstruction of Global Sea Surf
 }"""
 
 
-struct AttribVal{T,N}
-    name::String
-    values::NTuple{N,T}
-end
-
 function parseatt(str,i=1)
     irange=i:(i-1)
     t,irange = nexttoken(str,last(irange)+1)
 
     if (t == :nothing) || (str[irange] == "")
-        return (nothing,0)
+        return (nothing,nothing,0)
     end
     T = parsetype(str[irange])
 
@@ -431,9 +429,53 @@ function parseatt(str,i=1)
             end
         end
     end
-    return (AttribVal(name,(v...,)),last(irange)+1)
+    return (name,(v...,),last(irange)+1)
 end
 
+function parsedas(str,i=1)
+    irange = i:(i-1)
+
+    att = OrderedDict();
+
+    t,irange = nexttoken(str,last(irange)+1)
+    @assert str[irange] == "Attributes"
+
+    t,irange0 = nexttoken(str,last(irange)+1)
+    @assert t == :curly_braces
+
+    II = first(irange0)+1
+
+    while true
+        t,irange = nexttoken(str,II)
+
+        @show t,str[irange]
+        if (t == :nothing) || (str[irange] == "")
+            break
+        end
+
+        varname = str[irange]
+
+        t,irange = nexttoken(str,last(irange)+1)
+        @assert t == :curly_braces
+
+        al2 = OrderedDict();
+
+        i = first(irange)+1
+        while true
+            name,values,i = parseatt(str,i)
+            if name == nothing
+                break
+            end
+            al2[name] = values
+        end
+
+        att[varname] = al2
+
+        II = last(irange)+1
+    end
+
+    return att
+end
 
 @show parseatt("Float32 actual_range 88.0000000, -88.0000000;")
 
@@ -442,53 +484,46 @@ end
 str = das
 
 using DataStructures
-att = OrderedDict();
 
-i = 1
-irange = i:(i-1)
-t,irange = nexttoken(str,last(irange)+1)
-str[irange] == "Attributes"
 
-t,irange0 = nexttoken(str,last(irange)+1)
-t == :curly_braces
+att = parsedas(str)
 
-II = first(irange0)+1
+@show att
 
-while true
-    global II
-    t,irange = nexttoken(str,II)
+using CommonDataModel: AbstractDataset, variable
+import Base: keys
 
-    @show t,str[irange]
-    if (t == :nothing) || (str[irange] == "")
-        break
-    end
 
-    varname = str[irange]
+#module OPeNDAP
 
-    t,irange = nexttoken(str,last(irange)+1)
-    @assert t == :curly_braces
-
-    al = []
-    al2 = OrderedDict();
-
-    i = first(irange)+1
-    while true
-        #global i
-        av,i = parseatt(str,i)
-        if av == nothing
-            break
-        end
-
-        push!(al,av)
-        al2[av.name] = av.values
-    end
-
-    att[varname] = al2
-
-    II = last(irange)+1
+struct Dataset3 <: AbstractDataset
+    url::String
+    dds
+    das
 end
 
-i
+
+function Dataset3(url::AbstractString)
+    dds = String(HTTP.get(string(url,".dds")).body)
+    das = String(HTTP.get(string(url,".das")).body)
+    Dataset3(url,parse2(dds)[1],parsedas(das))
+end
+
+_list_var(d::Dataset) = _list_var.(d.variables)
+_list_var(v::Variable) = v.name
+_list_var(v::Grid) = _list_var(v.arrays)
+_list_var(v) = nothing
+
+Base.keys(ds::Dataset3) = _list_var(ds.dds)
+
+url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz"
+
+ds = Dataset3(url);
+
+keys(ds)
+ds
+
+
 
 # https://datatracker.ietf.org/doc/html/rfc1832
 
