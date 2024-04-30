@@ -45,7 +45,7 @@ struct Grid
     maps
 end
 
-struct Dataset
+struct DDSDataset
     name::String
     variables
 end
@@ -121,9 +121,7 @@ function next_token(str,i0=1)
 
     j = i
     while j <= ncodeunits(str)
-        #@show j,str[j],str[j] == ' '
         if str[j] in (' ','=','[',']','{','}',':',';','"',',')
-            #@show i,j,str[j],prevind(str,j)
             return (:token,i:prevind(str,j))
         end
         j = nextind(str,j)
@@ -142,20 +140,18 @@ function parse_dds(str,i=1)
     end
 
     if str[irange] == "Dataset"
-        #@show str,last(irange)+1
         return parse_ds(str,last(irange)+1)
     elseif str[irange] == "Grid"
-        return parsegrid(str,last(irange)+1)
+        return parse_grid(str,last(irange)+1)
     elseif str[irange] in ("Float32","Float64","Int16")
         return parse_variable(str,str[irange],last(irange)+1)
     end
 
     error("unknown $(str[irange])")
-#    @show "this is the end",t,str[irange],i
 end
 
 
-function parsedim(str,i=1)
+function parse_dimension(str,i=1)
     irange=i:(i-1)
 
     t,irange = next_token(str,last(irange)+1)
@@ -173,7 +169,6 @@ end
 
 function parse_variable(str,type,i=1)
     irange=i:(i-1)
-#    @show "tt",str[i:end]
 
     t,irange = next_token(str,last(irange)+1)
     name = str[irange]
@@ -182,7 +177,7 @@ function parse_variable(str,type,i=1)
     t,irange = next_token(str,last(irange)+1)
 
     while t == :square_braces
-        d = parsedim(str,first(irange)+1)
+        d = parse_dimension(str,first(irange)+1)
         push!(dims,d)
         t,irange = next_token(str,last(irange)+1)
     end
@@ -209,20 +204,16 @@ function parse_ds(str,i=1)
     end
 
 
-    #@show iend
-    #@show iend,str[iend]
     t,irange = next_token(str,last(irange)+1)
-    #@show str[irange]
     name = str[irange]
 
     t,irange = next_token(str,last(irange)+1)
     @assert t == Symbol(';')
 
-    return (Dataset(name,variables),last(irange)+1)
+    return (DDSDataset(name,variables),last(irange)+1)
 end
 
-function parsegrid(str,i=1)
-    #@show "grid",i
+function parse_grid(str,i=1)
     irange=i:(i-1)
 
     t,irange = next_token(str,last(irange)+1)
@@ -230,21 +221,17 @@ function parsegrid(str,i=1)
 
 
     t,irange = next_token(str,first(irange)+1)
-    @assert str[irange] == "Array"
+    @assert lowercase(str[irange]) == "array"
 
     t,irange = next_token(str,last(irange)+1)
-    #@show str[irange]
     @assert str[irange] == ":"
 
     array,iend = parse_dds(str,last(irange)+1)
-    #@show array
 
     t,irange = next_token(str,iend)
-    #@show str[irange]
-    @assert str[irange] == "Maps"
+    @assert lowercase(str[irange]) == "maps"
 
     t,irange = next_token(str,last(irange)+1)
-    #@show str[irange]
     @assert str[irange] == ":"
 
     maps = []
@@ -253,16 +240,14 @@ function parsegrid(str,i=1)
         push!(maps,v)
         v,iend = parse_dds(str,iend)
     end
-    #@show v,iend,str[iend]
+
     t,irange = next_token(str,iend+1)
-    #@show str[irange]
     name = str[irange]
 
     t,irange = next_token(str,last(irange)+1)
     @assert t == Symbol(';')
 
     type = "Grid";
-    #return ((;type,array,maps,name),last(irange)+1)
     return (Grid(name,array,maps),last(irange)+1)
 
 end
@@ -354,19 +339,19 @@ function parse_das(str,i=1)
     return att
 end
 
-_list_var(ds,d::Dataset) = _list_var.(Ref(ds),d.variables)
+_list_var(ds,d::DDSDataset) = _list_var.(Ref(ds),d.variables)
 _list_var(ds,v::Variable{T,N}) where {T,N} = Variable{T,N,typeof(ds)}(v.name,v.dims,ds)
 _list_var(ds,v::Grid) = _list_var(ds,v.arrays)
 _list_var(ds,v) = nothing
 
-struct Dataset3 <: AbstractDataset
+struct Dataset <: AbstractDataset
     url::String
     dds
     das
 end
 
-CommonDataModel.attribnames(ds::Dataset3) = keys(ds.das["NC_GLOBAL"])
-CommonDataModel.attrib(ds::Dataset3,name::Union{AbstractString, Symbol}) = ds.das["NC_GLOBAL"][name]
+CommonDataModel.attribnames(ds::Dataset) = keys(ds.das["NC_GLOBAL"])
+CommonDataModel.attrib(ds::Dataset,name::Union{AbstractString, Symbol}) = ds.das["NC_GLOBAL"][name]
 CommonDataModel.attribnames(v::Variable) = keys(v.parent.das[name(v)])
 function CommonDataModel.attrib(v::Variable,attname::Union{AbstractString, Symbol})
     v.parent.das[name(v)][attname]
@@ -376,15 +361,15 @@ Base.size(v::Variable) = reverse(ntuple(i -> v.dims[i].len,ndims(v)))
 CommonDataModel.dimnames(v::Variable) = reverse(ntuple(i -> v.dims[i].name,ndims(v)))
 
 
-function Dataset3(url::AbstractString)
+function Dataset(url::AbstractString)
     dds = String(HTTP.get(string(url,".dds")).body)
     das = String(HTTP.get(string(url,".das")).body)
-    Dataset3(url,parse_dds(dds)[1],parse_das(das))
+    Dataset(url,parse_dds(dds)[1],parse_das(das))
 end
 
 
-Base.keys(ds::Dataset3) = name.(_list_var(ds,ds.dds))
-function CommonDataModel.variable(ds::Dataset3,n::Union{AbstractString, Symbol})
+Base.keys(ds::Dataset) = name.(_list_var(ds,ds.dds))
+function CommonDataModel.variable(ds::Dataset,n::Union{AbstractString, Symbol})
     for v in _list_var(ds,ds.dds)
         if name(v) == n
             return v
@@ -398,6 +383,29 @@ dods_index(index::NTuple{N,<:AbstractRange}) where N = join(ntuple(i -> string('
 dods_index(index::NTuple{N,Colon}) where N = ""
 
 
+
+# From NCDatasets
+# the difficulty here is to make the size inferrable by the compiler
+@inline _shape_after_slice(sz,indexes...) = __sh(sz,(),1,indexes...)
+@inline __sh(sz,sh,n,i::Integer,indexes...) = __sh(sz,sh,               n+1,indexes...)
+@inline __sh(sz,sh,n,i::Colon,  indexes...) = __sh(sz,(sh...,sz[n]),    n+1,indexes...)
+@inline __sh(sz,sh,n,i,         indexes...) = __sh(sz,(sh...,length(i)),n+1,indexes...)
+@inline __sh(sz,sh,n) = sh
+
+
+_normalizeindex(n,ind::Base.OneTo) = 1:1:ind.stop
+_normalizeindex(n,ind::Colon) = 1:1:n
+_normalizeindex(n,ind::Int) = ind:1:ind
+_normalizeindex(n,ind::UnitRange) = StepRange(ind)
+_normalizeindex(n,ind::StepRange) = ind
+_normalizeindex(n,ind) = error("unsupported index")
+
+# indexes can be longer than sz
+function normalizeindexes(sz,indexes)
+    return ntuple(i -> _normalizeindex(sz[i],indexes[i]), length(sz))
+end
+
+#=
 function Base.getindex(v::Variable{T,N},index...) where {T,N}
     ind = ntuple(N) do i
         if index[i] isa Number
@@ -413,11 +421,18 @@ function Base.getindex(v::Variable{T,N},index...) where {T,N}
     #@show ind
     return v[ind...]
 end
+=#
 
-function Base.getindex(v::Variable{T,N},index::AbstractRange...) where {T,N}
-    url = string(v.parent.url,".dods?",name(v),dods_index(reverse(index)))
 
-    @debug "URL" url
+function Base.getindex(v::Variable{T,N},indexes...) where {T,N}
+    sz = size(v)
+    nind = normalizeindexes(sz,indexes)
+
+    url = string(v.parent.url,".dods?",name(v),dods_index(reverse(nind)))
+
+    sz2 = _shape_after_slice(sz,indexes...)
+
+    @debug "URL" url sz sz2 nind
     # https://datatracker.ietf.org/doc/html/rfc1832
 
 
@@ -445,7 +460,7 @@ function Base.getindex(v::Variable{T,N},index::AbstractRange...) where {T,N}
     b = hton(read(io,Int16))
 
     @debug "count " a,b,count
-    data = Array{T,N}(undef,length.(index)...)
+    data = Array{T,length(sz2)}(undef,sz2)
 
     @assert length(data) == count
     @inbounds for i = 1:length(data)

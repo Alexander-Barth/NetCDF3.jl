@@ -10,7 +10,7 @@ print(String(body))
 include("opendap.jl")
 
 using .OPENDAP: token_paren, next_token, parse_dds, parse_das, token_string,
-    Dataset3, _list_var, dods_index, variable, dimnames
+    _list_var, dods_index, variable, dimnames
 
 str = "{ foo { barα∀ } baz } lala"
 i0 = 1
@@ -167,7 +167,7 @@ att = parse_das(str)
 
 url = "http://test.opendap.org/dap/data/nc/sst.mnmean.nc.gz"
 
-ds = Dataset3(url);
+ds = OPENDAP.Dataset(url);
 ds
 keys(ds)
 _list_var(ds,ds.dds)
@@ -205,23 +205,28 @@ sst = ds["sst"][1:3,1:3,1:2]
 lon = ds["lon"][:]
 lat = ds["lat"][:]
 
-sst = @time ds["sst"][:,:,1:1];
+sst = @time ds["sst"][:,:,1];
 
 import NCDatasets
 dsnc = NCDatasets.Dataset(url);
-sst = @time dsnc["sst"][:,:,1:1];
+sst = @time dsnc["sst"][:,:,1];
 
 a = replace(sst,missing => NaN)
 
 #using PyPlot
-#pcolormesh(lon,lat,a[:,:,1]')
+#pcolormesh(lon,lat,a')
+url = "https://n5eil02u.ecs.nsidc.org/opendap/SMAP/SPL4SMAU.006/2015.03.31/SMAP_L4_SM_aup_20150331T030000_Vv6032_001.h5"
 
-#=
-readline(io)
-s = read(io,10)
-@show String(s)
+using URIs
 
-hton(read(io,UInt32))
 
-hton(read(io,Float32))
-=#
+username_escaped = URIs.escapeuri(ENV["CMEMS_USERNAME"])
+password_escaped = URIs.escapeuri(ENV["CMEMS_PASSWORD"])
+
+url = "https://my.cmems-du.eu/thredds/dodsC/bs-ulg-car-rean-m"
+url2 = string(URI(URI(url),userinfo = string(username_escaped,":",password_escaped)))
+
+#ds = OPENDAP.Dataset(url2);
+a = ds["talk"][:,:,1,1]
+a = replace(a,missing => NaN)
+pcolormesh(a')
