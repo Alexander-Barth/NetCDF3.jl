@@ -20,7 +20,7 @@ nctime = defVar(ds,"time",T,("time",))
 ncvar = defVar(ds,"foo",T,("lon","lat","time"));
 nclon[:] = 1:sz[1]
 nclat[:] = 1:sz[2]
-nctime[:] = time_ref
+nctime[1:length(time_ref)] = time_ref
 ncvar[:,:,:] = data_ref
 close(ds)
 
