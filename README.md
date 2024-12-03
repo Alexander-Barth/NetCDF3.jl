@@ -1,7 +1,6 @@
 
 [![Build Status](https://github.com/Alexander-Barth/NetCDF3.jl/workflows/CI/badge.svg)](https://github.com/Alexander-Barth/NetCDF3.jl/actions)
-[![codecov.io](http://codecov.io/github/Alexander-Barth/NetCDF3.jl/coverage.svg?branch=main)](http://codecov.io/github/Alexander-Barth/NetCDF3.jl?branch=master)
-
+[![codecov](https://codecov.io/github/Alexander-Barth/NetCDF3.jl/graph/badge.svg?token=3I93JPOLVO)](https://codecov.io/github/Alexander-Barth/NetCDF3.jl)
 
 
 Experimental package of a pure julia NetCDF 3 file format reader and writer.
